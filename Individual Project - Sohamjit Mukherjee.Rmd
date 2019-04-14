@@ -1,0 +1,235 @@
+---
+title: 'House Price Prediction'
+author: "Sohamjit Mukherjee"
+date: "14 April 2019"
+output: html_document
+---
+
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Loading the Packages
+
+<span style="color:orange"> Let us start by clearing the workspace and installing the required libraries. "SuppressMessages" in the code helps us to not display the unnecessary messages during the installation process.
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, fig.showtext=FALSE}
+
+rm(list=ls())
+
+if(!require(data.table)){
+    install.packages("data.table")
+    suppressMessages(library(data.table))
+}
+
+if(!require(stringr)){
+    install.packages("stringr")
+    suppressMessages(library(stringr))
+}
+
+
+if(!require(shiny)){
+    install.packages("shiny")
+    suppressMessages(library(shiny))
+}
+
+if(!require(tidyr)){
+    install.packages("tidyr")
+    suppressMessages(library(tidyr))
+}
+
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    suppressMessages(library(ggplot2))
+}
+
+if(!require(gridExtra)){
+    install.packages("gridExtra")
+    suppressMessages(library(gridExtra))
+}
+
+
+if(!require(visNetwork)){
+    install.packages("visNetwork")
+    suppressMessages(library(visNetwork))
+}
+
+if(!require(xgboost)){
+    install.packages("xgboost")
+    suppressMessages(library(xgboost))
+}
+
+if(!require(ranger)){
+    install.packages("ranger")
+    suppressMessages(library(ranger))
+}
+
+if(!require(glmnet)){
+    install.packages("glmnet")
+    suppressMessages(library(glmnet))
+}
+
+```
+
+
+
+```{r}
+
+df_train = as.data.table(read.csv("house_price_train.csv"))
+
+```
+
+## Exploratory Data Analysis
+
+### 3.1 Check the overall structure of the data
+
+```{r}
+
+str(df_train)
+
+```
+
+### 3.2 Remove the unwanted columns
+
+```{r}
+
+df_train$id = NULL 
+df_train$date = NULL
+
+```
+
+## 4 Baseline Model
+
+<span style="color:green"> For the base line model we will simple split the the data set into 75% train and rest 25% into test and check the accuracy.
+
+
+### 4.1 Model - Linear Model
+
+```{r}
+
+# Create the function to split the test and train data set.
+
+split = function(df, prop = 0.75){
+
+set.seed(6497)
+df = data.table(df)
+sample = sample.int(n = nrow(df), size = floor(prop*nrow(df)), replace = F)
+
+assign("train", df[sample,] , envir = .GlobalEnv)  
+assign("test" , df[-sample,] ,envir = .GlobalEnv)   
+}
+
+# Use the function to split on test and train data.
+
+split(df_train , 0.90)
+
+# Run the model.
+
+lm_model = lm(price ~.-price ,data=train)
+
+#Check overall summary.
+
+summary(lm_model)
+
+# Predict on the test data.
+
+lm_pred = predict(lm_model , test)
+
+# Check the error
+
+lm_rmse = rmse(lm_pred, test$price)
+lm_mape = mape(lm_pred, test$price)
+
+```
+
+### 4.2 Model - XG Boost
+
+```{r}
+
+# Run the model.
+
+xgb_model = xgboost(data = as.matrix(train[,-1]), nfold = 1, label = as.matrix(train$price), 
+                   nrounds = 100, verbose = T, objective = "reg:linear", eval_metric = "rmse", 
+                   nthread = 20, eta = 0.1, gamma =0.5, max_depth = 20, min_child_weight = 5, 
+                   subsample = 0.6213, colsample_bytree = 0.4603, print_every_n = 20)
+
+
+#Check overall summary.
+
+summary(xgb_model)
+
+# Predict on the test data.
+
+xgb_pred = predict(xgb_model , as.matrix(test[,-1]))
+
+# Check the error
+
+xgb_rmse = rmse(xgb_pred, test$price)
+xgb_mape = mape(xgb_pred, test$price)
+
+
+```
+
+### 4.3 Model - Randomforest
+
+```{r}
+
+# Run the model.
+
+rf_model = ranger(price ~ . , data = train)
+
+
+#Check overall summary.
+
+summary(rf_model)
+
+# Predict on the test data.
+
+rf_pred = predict(rf_model , test)$predictions
+
+# Check the error
+
+rf_rmse = rmse(rf_pred, test$price)
+rf_mape = mape(rf_pred, test$price)
+
+
+```
+
+### 4.4 Model - GlMNet
+
+```{r}
+
+# Run the model.
+
+glm_model = glmnet(x = data.matrix(train[, !'price']), 
+                 y = train[['price']],
+                 family = 'gaussian',
+                 alpha=1)
+
+
+#Check overall summary.
+
+summary(glm_model)
+
+# Predict on the test data.
+
+glm_pred = predict(glm_model , as.matrix(test[, !'price']))
+
+# Check the error
+
+glm_rmse = rmse(glm_pred, test$price)
+glm_mape = mape(glm_pred, test$price)
+
+
+```

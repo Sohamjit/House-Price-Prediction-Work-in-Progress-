@@ -128,7 +128,7 @@ sapply(df_train,function(x) sum(is.na(x)))
 
 ```
 
-<span style="color:green"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
+<span style="color:blue"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
 
 ### 3.4 Visualiza the spread of the houses by latitude & logitude (Interactive Graph)
 
@@ -142,7 +142,7 @@ leaflet(data = df_train) %>%
 
 ```
 
-<span style="color:orange"> From the above plot it is almost impossible to find any reasonable insights as the data are too much cluttered. Therefore, we will create another map and integrate in shiny app and provide the users with the ability to fiter the result based on zip code.
+<span style="color:blue"> From the above plot it is almost impossible to find any reasonable insights as the data are too much cluttered. Therefore, we will create another map and integrate in shiny app and provide the users with the ability to fiter the result based on zip code.
 
 
 ### 3.5 Visualiza the spread of the houses by latitude & logitude (in Shinny app)
@@ -199,6 +199,51 @@ grid.arrange(Plot1,Plot2, nrow = 1)
 
 <span style="color:blue"> From the bar plot we can see that the houses with bedrooms 5 to 6 cost the most. Surprisnlgy, the house with 33 bedrooms cost quite less. This points to the fact that this may be an outlier.
 
+### 3.7 Price of house based on the year built.
+
+```{r}
+
+# Roll up the total price based on year built.
+
+MeanPriceOverYears = aggregate(price ~ yr_built, df_train, mean)
+
+# Visualize the line plot
+
+ggplot(data=MeanPriceOverYears, aes(x=yr_built, y=price, group=1)) +
+  geom_line(color="red" , linetype="dashed")+
+  geom_point() +
+  theme_classic() +
+  xlab("Years") +
+  ylab("Mean Price of Houses") +
+  ggtitle("Average Price of Houses Across Different Years") +
+  scale_y_continuous(labels = scales::comma)
+
+```
+
+<span style="color:blue"> We can see that the average prices of hosues took a sharp deep before 1950's and continue to rise after that as the year of built increases. This is quite evident from the fact that new houses will cost more, while some accient houses may be due to heritage also costs more.
+
+
+### 3.7 Price of house by Floors and Waterfront.
+
+```{r}
+
+ggplot(df_train, aes(x= floors, y= price
+                         , group =as.factor(waterfront) 
+                         , color =as.factor(waterfront))) +
+  geom_point() +
+  
+  theme_classic() +
+  ggtitle("Price of House Based on Floors")+
+  xlab("Number of Floors") +
+  ylab("Price of Houses") +
+  facet_wrap(~waterfront)+
+  theme(strip.text.x = element_text(size=10, face ="bold"),
+        strip.background = element_rect(colour="black", fill="white"))  +
+  scale_y_continuous(labels = scales::comma) 
+
+
+```
+<span style="color:blue"> The prices seems to be evenly spreadout. However we can make following conclusions: 1) Houses with waterfront generally has some minimum price as the minimum cost is higher than those without. Also flats with 3 floors and with waterfront, minimum cost is significantly higer that 3 floors houses without waterfront
 
 ## 4 Baseline Model
 

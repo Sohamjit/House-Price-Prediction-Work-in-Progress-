@@ -80,13 +80,24 @@ if(!require(glmnet)){
     suppressMessages(library(glmnet))
 }
 
+if(!require(leaflet)){
+    install.packages("leaflet")
+    suppressMessages(library(leaflet))
+}
+
+if(!require(shiny)){
+    install.packages("shiny")
+    suppressMessages(library(shiny))
+}
+
+
 ```
 
 
 
 ```{r}
 
-df_train = as.data.table(read.csv("house_price_train.csv"))
+df_train = as.data.table(fread("house_price_train.csv" ,stringsAsFactors = T))
 
 ```
 
@@ -108,6 +119,86 @@ df_train$id = NULL
 df_train$date = NULL
 
 ```
+
+### 3.3 Check for missing values
+
+```{r}
+
+sapply(df_train,function(x) sum(is.na(x)))
+
+```
+
+<span style="color:green"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
+
+### 3.4 Visualiza the spread of the houses by latitude & logitude (Interactive Graph)
+
+```{r}
+
+leaflet(data = df_train) %>% 
+  addTiles() %>%
+  addMarkers(~long, ~lat, popup = ~as.character(price), 
+             label = ~as.character(price))
+
+
+```
+
+<span style="color:orange"> From the above plot it is almost impossible to find any reasonable insights as the data are too much cluttered. Therefore, we will create another map and integrate in shiny app and provide the users with the ability to fiter the result based on zip code.
+
+
+### 3.5 Visualiza the spread of the houses by latitude & logitude (in Shinny app)
+
+```{r}
+Bedroom3orLess = df_train[bedrooms <=3,]
+BedroomBetween3and7 = df_train[bedrooms <=7 & bedrooms >=3 ,]
+Bedroom8orGreater = df_train[bedrooms >=8,]
+
+
+```
+
+
+### 3.6 Analysis of the bedrooms in the houses
+
+```{r}
+
+# Plot distribution of prices with number of bedrooms
+
+Plot1 = ggplot( df_train , aes(as.factor(bedrooms))) +
+  geom_bar(aes(fill = as.factor(floors))) +
+  theme_classic() +
+  xlab("Number of Bedrooms") +
+  ylab("Frequency of the Flats") +
+  ggtitle("Frequency of Houses Based on Bedrooms")
+
+
+# Create a data table with average price per bedrooms
+
+avgprice_bedroom = data.table(aggregate(df_train[, c("price")], list(df_train$bedrooms), mean))
+
+# Rename the column in the data table
+
+names(avgprice_bedroom) = c("Bedrooms" , "AveragePrice")
+
+# Plot the distribution of avg price based on number of bedrooms
+
+Plot2 = ggplot(avgprice_bedroom , aes(Bedrooms, AveragePrice))+
+           geom_col(fill="green") +
+        ggtitle("Average Price Per Bedrooms") +
+        theme_classic() +
+       xlab("Number of Bedrooms") +
+      ylab("Price") 
+
+
+# Arange both the plot side by side
+
+
+grid.arrange(Plot1,Plot2, nrow = 1)
+
+```
+
+<span style="color:blue"> Most of the houses in the dataset has bedrooms 7 or less. There are few cases where the number of bedrooms exceeded 8. Those may be entry errors or they are exception cases. Also, most of the houses in the database are either 1 or 2 stored.
+
+<span style="color:blue"> From the bar plot we can see that the houses with bedrooms 5 to 6 cost the most. Surprisnlgy, the house with 33 bedrooms cost quite less. This points to the fact that this may be an outlier.
+
 
 ## 4 Baseline Model
 

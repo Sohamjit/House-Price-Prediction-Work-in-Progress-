@@ -26,7 +26,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r, error=FALSE, message=FALSE, warning=FALSE, fig.showtext=FALSE}
 
-rm(list=ls())
+#rm(list=ls())
 
 if(!require(data.table)){
     install.packages("data.table")
@@ -38,10 +38,14 @@ if(!require(stringr)){
     suppressMessages(library(stringr))
 }
 
+if(!require(anocva)){
+    install.packages("anocva")
+    suppressMessages(library(anocva))
+}
 
-if(!require(shiny)){
-    install.packages("shiny")
-    suppressMessages(library(shiny))
+if(!require(mltools)){
+    install.packages("mltools")
+    suppressMessages(library(mltools))
 }
 
 if(!require(tidyr)){
@@ -64,6 +68,7 @@ if(!require(visNetwork)){
     install.packages("visNetwork")
     suppressMessages(library(visNetwork))
 }
+
 
 if(!require(xgboost)){
     install.packages("xgboost")
@@ -141,6 +146,7 @@ sapply(df_train,function(x) sum(is.na(x)))
 ```
 
 <span style="color:blue"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
+
 
 ### 3.4 Visualiza the spread of the houses by latitude & logitude (Interactive Graph)
 
@@ -257,9 +263,29 @@ ggplot(df_train, aes(x= floors, y= price
 ```
 <span style="color:blue"> The prices seems to be evenly spreadout. However we can make following conclusions: 1) Houses with waterfront generally has some minimum price as the minimum cost is higher than those without. Also flats with 3 floors and with waterfront, minimum cost is significantly higer that 3 floors houses without waterfront
 
+
+```{r}
+ggplot(data=df_train[!is.na(df_train$price),], aes(x=factor(condition), y=price))+
+        geom_boxplot(col='blue') + labs(x='Hounse Condition') +
+  theme_classic() +
+  ggtitle("Boxplot of House Prices Based on Condition")
+
+```
+
+<span style="color:blue"> Overall as the condition of house increases the price also increases. But there doesnot seem to a much difference in mean for houses having condition above or equal to 3. There also seems to be quite a lot of outliers in houses with condtions 3 or above.
+
+
+```{r}
+
+corrplot.mixed(cor(df_train), tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
+
+```
+ 
+<span style="color:blue"> There seems to be a quite strong relation between grade, bathrooms and sqft_living & sqft_above. Price also seems to be strongly correlated with sqft's grades and bathrooms.
+
 ## 4 Baseline Model
 
-<span style="color:green"> For the base line model we will simple split the the data set into 75% train and rest 25% into test and check the accuracy.
+<span style="color:blue"> For the base line model we will simple split the the data set into 75% train and rest 25% into test and check the accuracy.
 
 
 ### 4.1 Model - Linear Model
@@ -399,13 +425,21 @@ BaselineMetric
 
 ## 5. Feature Engineering
 
+<span style="color:blue"> Before, we staart with the feature engineering we will combine both the test and the train data set in order to do all the data manipulation and data creation only once.
+
+```{r}
+
+df = rbind(df_train[,!c("price")] , df_test)
+
+```
+
 ### 5.1 Total House Area
 
 <span style="color:blue"> Adding the total area of the house.
 
 ```{r}
 
-df_train[,total_area := (sqft_living +  sqft_lot + sqft_above + sqft_basement)]
+df[,total_area := (sqft_living +  sqft_lot + sqft_above + sqft_basement)]
 
 ```
 
@@ -415,7 +449,7 @@ df_train[,total_area := (sqft_living +  sqft_lot + sqft_above + sqft_basement)]
 
 ```{r}
 
-df_train[,avg_area := (total_area / (bedrooms + bathrooms))]
+df[,avg_area := (total_area / (bedrooms + bathrooms))]
 
 ```
 
@@ -423,9 +457,9 @@ df_train[,avg_area := (total_area / (bedrooms + bathrooms))]
 
 ```{r}
 
-df = df_train[,c("zipcode" , "lat","long")]
+df1 = df[,c("zipcode" , "lat","long")]
 
-d <- dist(df, method = "euclidean") # distance matrix
+d <- dist(df1, method = "euclidean") # distance matrix
 
 fit <- hclust(d, method="ward") 
 
@@ -439,6 +473,30 @@ rect.hclust(fit, k=5, border="red")
 
 # Assign the clusters back to the original data set
 
-df_train[, cluster_val := groups]
+df[, cluster_val := groups]
+
+```
+
+### 5.4 Bin Year Built column
+
+Based on our data exploration which clearly shows the trend of the house price is quite high before 1950 and then somewhere in between, between 1950 - 2000 and quite high after 2000, we will bin the column into these three categories and then one hot encoding
+
+```{r}
+
+# Bin the column year built
+
+df$year_built = ifelse(df$yr_built <=1950, "built_before_1950", ifelse(df$yr_built > 1950 & df$yr_built <2000,"built_before_2000","built_after_2000"))
+
+# Convert the column to a factor
+
+df$year_built =as.factor(df$year_built)
+
+# One hot encode the column
+
+one_hot(df, cols = "year_built")
+
+# Drop the earlier created table
+
+df$year_built = NULL
 
 ```

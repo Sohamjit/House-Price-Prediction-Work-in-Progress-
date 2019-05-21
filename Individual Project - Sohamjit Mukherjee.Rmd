@@ -20,9 +20,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-## Loading the Packages
+## 1. Loading the Packages
 
-<span style="color:orange"> Let us start by clearing the workspace and installing the required libraries. "SuppressMessages" in the code helps us to not display the unnecessary messages during the installation process.
+<span style="color:blue"> Let us start by clearing the workspace and installing the required libraries. "SuppressMessages" in the code helps us to not display the unnecessary messages during the installation process.
 
 ```{r, error=FALSE, message=FALSE, warning=FALSE, fig.showtext=FALSE}
 
@@ -70,6 +70,11 @@ if(!require(xgboost)){
     suppressMessages(library(xgboost))
 }
 
+if(!require(Metrics)){
+    install.packages("Metrics")
+    suppressMessages(library(Metrics))
+}
+
 if(!require(ranger)){
     install.packages("ranger")
     suppressMessages(library(ranger))
@@ -93,11 +98,14 @@ if(!require(shiny)){
 
 ```
 
+##  Reading Data
 
+<span style="color:blue"> We will read both the train and test data which is in the .csv format and convert it into data table format
 
 ```{r}
 
-df_train = as.data.table(fread("house_price_train.csv" ,stringsAsFactors = T))
+df_train = as.data.table(fread("house_price_train.csv" ,stringsAsFactors = F))
+df_test = as.data.table(fread("house_price_test.csv" ,stringsAsFactors = F))
 
 ```
 
@@ -117,6 +125,10 @@ str(df_train)
 
 df_train$id = NULL 
 df_train$date = NULL
+
+
+df_test$id = NULL 
+df_test$date = NULL
 
 ```
 
@@ -367,5 +379,66 @@ glm_pred = predict(glm_model , as.matrix(test[, !'price']))
 glm_rmse = rmse(glm_pred, test$price)
 glm_mape = mape(glm_pred, test$price)
 
+
+```
+
+### 4.5 Compare Baseline Model
+
+```{r}
+
+BaselineMetric= cbind( rbind(LM = lm_rmse,XGB = xgb_rmse,RF = rf_rmse, GLM = glm_rmse), rbind(LM = lm_mape,XGB = xgb_mape,RF = rf_mape, GLM = glm_mape))
+
+colnames(BaselineMetric) = c("RMSE", "MAPE")
+
+BaselineMetric
+
+```
+
+<span style="color:blue"> From the Root mean square value and the mean absolute percentage error it is quite visible that the Random forest & Gradient Boosting is perfoiming better than any other algorithms.
+
+
+## 5. Feature Engineering
+
+### 5.1 Total House Area
+
+<span style="color:blue"> Adding the total area of the house.
+
+```{r}
+
+df_train[,total_area := (sqft_living +  sqft_lot + sqft_above + sqft_basement)]
+
+```
+
+### 5.2 Average Housing Area
+
+<span style="color:blue"> We will now calculate the average total area based on the number of bathrooms and bedrooms
+
+```{r}
+
+df_train[,avg_area := (total_area / (bedrooms + bathrooms))]
+
+```
+
+### 5.3 Clustering of Latitude , Longitude & Zipcode
+
+```{r}
+
+df = df_train[,c("zipcode" , "lat","long")]
+
+d <- dist(df, method = "euclidean") # distance matrix
+
+fit <- hclust(d, method="ward") 
+
+plot(fit) # display dendogram
+
+groups <- cutree(fit, k=5) # cut tree into 5 clusters
+
+# draw dendogram with red borders around the 5 clusters 
+
+rect.hclust(fit, k=5, border="red")
+
+# Assign the clusters back to the original data set
+
+df_train[, cluster_val := groups]
 
 ```

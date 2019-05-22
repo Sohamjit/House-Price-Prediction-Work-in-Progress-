@@ -63,10 +63,15 @@ if(!require(gridExtra)){
     suppressMessages(library(gridExtra))
 }
 
+if(!require(optiRum)){
+    install.packages("optiRum")
+    suppressMessages(library(optiRum))
+}
 
-if(!require(visNetwork)){
-    install.packages("visNetwork")
-    suppressMessages(library(visNetwork))
+
+if(!require(corrplot)){
+    install.packages("corrplot")
+    suppressMessages(library(corrplot))
 }
 
 
@@ -93,6 +98,11 @@ if(!require(glmnet)){
 if(!require(leaflet)){
     install.packages("leaflet")
     suppressMessages(library(leaflet))
+}
+
+if(!require(rowr)){
+    install.packages("rowr")
+    suppressMessages(library(rowr))
 }
 
 if(!require(shiny)){
@@ -148,7 +158,7 @@ sapply(df_train,function(x) sum(is.na(x)))
 <span style="color:blue"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
 
 
-### 3.4 Visualiza the spread of the houses by latitude & logitude (Interactive Graph)
+### 3.4 Visualize the spread of the houses by latitude & logitude (Interactive Graph)
 
 ```{r}
 
@@ -176,7 +186,7 @@ Bedroom8orGreater = df_train[bedrooms >=8,]
 
 ### 3.6 Analysis of the bedrooms in the houses
 
-```{r}
+```{r , fig.height= 12 , fig.width= 16}
 
 # Plot distribution of prices with number of bedrooms
 
@@ -219,7 +229,7 @@ grid.arrange(Plot1,Plot2, nrow = 1)
 
 ### 3.7 Price of house based on the year built.
 
-```{r}
+```{r , fig.height= 12 , fig.width= 16}
 
 # Roll up the total price based on year built.
 
@@ -243,7 +253,7 @@ ggplot(data=MeanPriceOverYears, aes(x=yr_built, y=price, group=1)) +
 
 ### 3.7 Price of house by Floors and Waterfront.
 
-```{r}
+```{r, fig.height= 12 , fig.width= 16}
 
 ggplot(df_train, aes(x= floors, y= price
                          , group =as.factor(waterfront) 
@@ -263,8 +273,9 @@ ggplot(df_train, aes(x= floors, y= price
 ```
 <span style="color:blue"> The prices seems to be evenly spreadout. However we can make following conclusions: 1) Houses with waterfront generally has some minimum price as the minimum cost is higher than those without. Also flats with 3 floors and with waterfront, minimum cost is significantly higer that 3 floors houses without waterfront
 
+### 3.8  Boxplot of House Condition
 
-```{r}
+```{r , fig.height= 12 , fig.width= 16}
 ggplot(data=df_train[!is.na(df_train$price),], aes(x=factor(condition), y=price))+
         geom_boxplot(col='blue') + labs(x='Hounse Condition') +
   theme_classic() +
@@ -274,8 +285,39 @@ ggplot(data=df_train[!is.na(df_train$price),], aes(x=factor(condition), y=price)
 
 <span style="color:blue"> Overall as the condition of house increases the price also increases. But there doesnot seem to a much difference in mean for houses having condition above or equal to 3. There also seems to be quite a lot of outliers in houses with condtions 3 or above.
 
+### 3.9 Overall Plot of All Columns
 
-```{r}
+```{r, fig.height= 12 , fig.width= 16}
+
+s1 = ggplot(data= df_train, aes(x=floors)) +
+  geom_density() + labs(x='Floors') + theme_classic()
+s2 =  ggplot(data=df_train, aes(x=as.factor(waterfront))) +
+  geom_histogram(stat='count') + labs(x='Waterfront')  + theme_classic()
+s3 =  ggplot(data= df_train, aes(x=view)) +
+  geom_histogram() + labs(x='View')  + theme_classic()
+s4 =  ggplot(data= df_train, aes(x=sqft_living)) +
+  geom_density() + labs(x='Square Feet Living')  + theme_classic()
+s5 =  ggplot(data= df_train, aes(x=sqft_basement)) +
+  geom_density() + labs(x='Square feet basement')  + theme_classic()
+s6 =  ggplot(data= df_train, aes(x=yr_renovated)) +
+  geom_density() + labs(x='Year Renovated')  + theme_classic()
+s7 =  ggplot(data= df_train, aes(x=bedrooms)) +
+  geom_density() + labs(x='Bedrooms')  + theme_classic()
+s8 =  ggplot(data= df_train, aes(x=bathrooms)) +
+  geom_histogram() + labs(x='Bathrooms') + theme_classic()
+
+layout =  matrix(c(1,2,3,4,5,6,7,8),4,2,byrow=TRUE)
+multiplot(s1, s2, s3, s4, s5, s6, s7, s8, layout=layout)
+
+```
+
+
+
+
+
+### 3.10 Correlation Matrix
+
+```{r , fig.height= 12 , fig.width= 16}
 
 corrplot.mixed(cor(df_train), tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
 
@@ -500,3 +542,103 @@ one_hot(df, cols = "year_built")
 df$year_built = NULL
 
 ```
+
+
+### 5.5 Seperate Test & Train Dataset
+
+
+```{r}
+
+df_final   = cbind.fill(df,df_train$price , fill = NA)
+
+df_final = data.table(df_final)
+colnames(df_final)[colnames(df_final)=="object"] = "price"
+
+# Final train data
+
+df_final_train = df_final[!is.na(df_final$price),]
+
+# Final test data
+
+df_final_test = df_final[is.na(df_final$price),]
+
+
+
+```
+
+
+## 6. Modeling
+
+### 6.1 XG Boost
+
+
+```{r, fig.height= 10, fig.width= 16}
+
+input_x <- as.matrix(select(df_final_train, -price))
+input_y = df_final_train$price
+
+
+nrounds = 1000
+
+tune_grid = expand.grid(
+  nrounds = seq(from = 200, to = nrounds, by = 50),
+  eta = c(0.025, 0.05, 0.1, 0.3),
+  max_depth = c(2, 3, 4, 5, 6),
+  gamma = 0,
+  colsample_bytree = 1,
+  min_child_weight = c(1,2,3),
+  subsample = 1
+)
+
+
+tune_control <- caret::trainControl(
+  method = "cv", # cross-validation
+  number =3 , 
+  verboseIter = TRUE,
+  allowParallel = TRUE # FALSE for reproducible results 
+)
+
+xgb_tune = caret::train(
+  x = input_x,
+  y = input_y,
+  trControl = tune_control,
+  tuneGrid = tune_grid,
+  method = "xgbTree",
+  verbose = TRUE
+)
+
+tuneplot <- function(x, probs = .90) {
+  ggplot(x) +
+    coord_cartesian(ylim = c(quantile(x$results$RMSE, probs = probs), min(x$results$RMSE))) +
+    theme_bw()
+}
+
+tuneplot(xgb_tune)
+
+
+xgb_tune$bestTune
+
+```
+
+
+```{r}
+
+set.seed(6497)
+
+control = trainControl(method="cv", number=3, search="grid")
+
+tunegrid = expand.grid(.mtry=c(1:15))
+
+metric = "MAPE"
+
+rf_gridsearch = train(price~., data=df_final_train, method="rf", metric=metric,
+                      tuneGrid=tunegrid, trControl=control)
+
+print(rf_gridsearch)
+
+plot(rf_gridsearch)
+
+
+```
+
+

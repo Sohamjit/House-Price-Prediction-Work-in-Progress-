@@ -48,6 +48,11 @@ if(!require(mltools)){
     suppressMessages(library(mltools))
 }
 
+if(!require(caret)){
+    install.packages("caret")
+    suppressMessages(library(caret))
+}
+
 if(!require(tidyr)){
     install.packages("tidyr")
     suppressMessages(library(tidyr))
@@ -137,12 +142,10 @@ str(df_train)
 ### 3.2 Remove the unwanted columns
 
 ```{r}
-
-df_train$id = NULL 
+ 
 df_train$date = NULL
 
 
-df_test$id = NULL 
 df_test$date = NULL
 
 ```
@@ -312,9 +315,6 @@ multiplot(s1, s2, s3, s4, s5, s6, s7, s8, layout=layout)
 ```
 
 
-
-
-
 ### 3.10 Correlation Matrix
 
 ```{r , fig.height= 12 , fig.width= 16}
@@ -352,7 +352,7 @@ split(df_train , 0.90)
 
 # Run the model.
 
-lm_model = lm(price ~.-price ,data=train)
+lm_model = lm(price ~.-price - id ,data=train)
 
 #Check overall summary.
 
@@ -462,7 +462,7 @@ BaselineMetric
 
 ```
 
-<span style="color:blue"> From the Root mean square value and the mean absolute percentage error it is quite visible that the Random forest & Gradient Boosting is perfoiming better than any other algorithms.
+<span style="color:blue"> From the Root mean square value and the mean absolute percentage error it is quite visible that the Random forest & Gradient Boosting is perfoiming better than any other algorithms. As , a result we will use these two algorithms for our final evaluation
 
 
 ## 5. Feature Engineering
@@ -521,7 +521,7 @@ df[, cluster_val := groups]
 
 ### 5.4 Bin Year Built column
 
-Based on our data exploration which clearly shows the trend of the house price is quite high before 1950 and then somewhere in between, between 1950 - 2000 and quite high after 2000, we will bin the column into these three categories and then one hot encoding
+<span style="color:blue"> Based on our data exploration which clearly shows the trend of the house price is quite high before 1950 and then somewhere in between, between 1950 - 2000 and quite high after 2000, we will bin the column into these three categories and then one hot encoding
 
 ```{r}
 
@@ -535,16 +535,14 @@ df$year_built =as.factor(df$year_built)
 
 # One hot encode the column
 
-one_hot(df, cols = "year_built")
+df= one_hot(df, cols = "year_built")
 
-# Drop the earlier created table
 
-df$year_built = NULL
 
 ```
 
 
-### 5.5 Seperate Test & Train Dataset
+### 5.5 Split Test & Train Dataset
 
 
 ```{r}
@@ -567,6 +565,27 @@ df_final_test = df_final[is.na(df_final$price),]
 ```
 
 
+### 5.6 Create validation dataset
+
+<span style="color:blue"> We will randomly take 5% of the train data set and use it as our valdiation dataset
+
+```{r}
+
+set.seed(6497)
+sample = sample.int(n = nrow(df_train), size = floor(0.95*nrow(df_train)), replace = F)
+
+# Create validation data set
+
+df_validate = df_final_train[-sample]
+
+# Create train data set
+
+df_final_train = df_final_train[sample]
+
+
+
+```
+
 ## 6. Modeling
 
 ### 6.1 XG Boost
@@ -574,7 +593,7 @@ df_final_test = df_final[is.na(df_final$price),]
 
 ```{r, fig.height= 10, fig.width= 16}
 
-input_x <- as.matrix(select(df_final_train, -price))
+input_x <- as.matrix(df_final_train[, !c("price","sqft_lot15", "id", "sqft_living15")])
 input_y = df_final_train$price
 
 
@@ -582,8 +601,8 @@ nrounds = 1000
 
 tune_grid = expand.grid(
   nrounds = seq(from = 200, to = nrounds, by = 50),
-  eta = c(0.025, 0.05, 0.1, 0.3),
-  max_depth = c(2, 3, 4, 5, 6),
+  eta = c(0.025, 0.05, 0.1),
+  max_depth = c( 3, 4, 5, 6),
   gamma = 0,
   colsample_bytree = 1,
   min_child_weight = c(1,2,3),
@@ -620,6 +639,11 @@ xgb_tune$bestTune
 
 ```
 
+<span style="color:blue"> Thus, the above condition gives the best result for xgb boost.
+
+### 6.2 Random Forest
+
+
 
 ```{r}
 
@@ -627,12 +651,12 @@ set.seed(6497)
 
 control = trainControl(method="cv", number=3, search="grid")
 
-tunegrid = expand.grid(.mtry=c(1:15))
+tunegrid = expand.grid(.mtry=c(2,4,6,8))
 
-metric = "MAPE"
+metric = "RMSE"
 
-rf_gridsearch = train(price~., data=df_final_train, method="rf", metric=metric,
-                      tuneGrid=tunegrid, trControl=control)
+rf_gridsearch = train(price~bedrooms + bathrooms + view + condition + grade + cluster_val +  lat+ long+ year_built_built_before_2000 + floors + total_area + waterfront + yr_renovated + zipcode+ year_built_built_before_1950, data=df_final_train, method="rf", metric=metric,
+                      tuneGrid=tunegrid, trControl=control, importance=T)
 
 print(rf_gridsearch)
 
@@ -641,4 +665,56 @@ plot(rf_gridsearch)
 
 ```
 
+
+### 6.3 Variable Importance
+
+<span style="color:blue"> Now lets quickly take a look at the important variables and its effect for the random forest algorithm.
+
+```{r}
+
+plot(varImp(rf_gridsearch), type = "l" , main = "Variable Importance for Random Forest Model (Descending Order) " , xlab = "Percentage" , ylab = "variables" , col = "red" , lwd = 10)
+
+plot(varImp(xgb_tune), type = "l" , main = "Variable Importance for XGB Boost Model (Descending Order) " , xlab = "Percentage" , ylab = "variables" , col = "blue" , lwd = 10)
+
+```
+
+### 6.4 Test on Validation Dataset
+
+```{r}
+
+rf = mape(predict(rf_gridsearch , df_validate), df_validate$price)
+
+xgb = mape(predict(xgb_tune , df_validate), df_validate$price)
+
+
+rbind( rf,xgb)
+
+```
+
+
+## 7. Model Ensembling & Final Prediction
+
+<span style="color:blue"> Finally, we will ensemble the random forest & the XGB Model prediction to create our final model. 
+
+```{r}
+
+ensembeld_model = mape((predict(xgb_tune , df_validate) + predict(rf_gridsearch , df_validate))/2, df_validate$price)
+
+
+ensembeld_model
+
+```
+
+<span style="color:blue"> After ensembling, we are able to reduce the MAPE by more than 1%. So, this will be our final model. 
+
+## 8 Creating Final CSV
+
+```{r}
+
+final_dataset = cbind(df_final_test , Predicted_Price = (predict(xgb_tune , df_final_test) + predict(rf_gridsearch , df_final_test))/2)
+
+
+
+
+```
 

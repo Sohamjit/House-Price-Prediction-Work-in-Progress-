@@ -1,0 +1,720 @@
+---
+title: 'House Price Prediction'
+author: "Sohamjit Mukherjee"
+date: "14 April 2019"
+output: html_document
+---
+
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## 1. Loading the Packages
+
+<span style="color:blue"> Let us start by clearing the workspace and installing the required libraries. "SuppressMessages" in the code helps us to not display the unnecessary messages during the installation process.
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, fig.showtext=FALSE}
+
+#rm(list=ls())
+
+if(!require(data.table)){
+    install.packages("data.table")
+    suppressMessages(library(data.table))
+}
+
+if(!require(stringr)){
+    install.packages("stringr")
+    suppressMessages(library(stringr))
+}
+
+if(!require(anocva)){
+    install.packages("anocva")
+    suppressMessages(library(anocva))
+}
+
+if(!require(mltools)){
+    install.packages("mltools")
+    suppressMessages(library(mltools))
+}
+
+if(!require(caret)){
+    install.packages("caret")
+    suppressMessages(library(caret))
+}
+
+if(!require(tidyr)){
+    install.packages("tidyr")
+    suppressMessages(library(tidyr))
+}
+
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    suppressMessages(library(ggplot2))
+}
+
+if(!require(gridExtra)){
+    install.packages("gridExtra")
+    suppressMessages(library(gridExtra))
+}
+
+if(!require(optiRum)){
+    install.packages("optiRum")
+    suppressMessages(library(optiRum))
+}
+
+
+if(!require(corrplot)){
+    install.packages("corrplot")
+    suppressMessages(library(corrplot))
+}
+
+
+if(!require(xgboost)){
+    install.packages("xgboost")
+    suppressMessages(library(xgboost))
+}
+
+if(!require(Metrics)){
+    install.packages("Metrics")
+    suppressMessages(library(Metrics))
+}
+
+if(!require(ranger)){
+    install.packages("ranger")
+    suppressMessages(library(ranger))
+}
+
+if(!require(glmnet)){
+    install.packages("glmnet")
+    suppressMessages(library(glmnet))
+}
+
+if(!require(leaflet)){
+    install.packages("leaflet")
+    suppressMessages(library(leaflet))
+}
+
+if(!require(rowr)){
+    install.packages("rowr")
+    suppressMessages(library(rowr))
+}
+
+if(!require(shiny)){
+    install.packages("shiny")
+    suppressMessages(library(shiny))
+}
+
+
+```
+
+##  Reading Data
+
+<span style="color:blue"> We will read both the train and test data which is in the .csv format and convert it into data table format
+
+```{r}
+
+df_train = as.data.table(fread("house_price_train.csv" ,stringsAsFactors = F))
+df_test = as.data.table(fread("house_price_test.csv" ,stringsAsFactors = F))
+
+```
+
+## Exploratory Data Analysis
+
+### 3.1 Check the overall structure of the data
+
+```{r}
+
+str(df_train)
+
+```
+
+### 3.2 Remove the unwanted columns
+
+```{r}
+ 
+df_train$date = NULL
+
+
+df_test$date = NULL
+
+```
+
+### 3.3 Check for missing values
+
+```{r}
+
+sapply(df_train,function(x) sum(is.na(x)))
+
+```
+
+<span style="color:blue"> There are no missing values in any of the columns. The data set is thus cleaned of any missing imputs.
+
+
+### 3.4 Visualize the spread of the houses by latitude & logitude (Interactive Graph)
+
+```{r}
+
+leaflet(data = df_train) %>% 
+  addTiles() %>%
+  addMarkers(~long, ~lat, popup = ~as.character(price), 
+             label = ~as.character(price))
+
+
+```
+
+<span style="color:blue"> From the above plot it is almost impossible to find any reasonable insights as the data are too much cluttered. Therefore, we will create another map and integrate in shiny app and provide the users with the ability to fiter the result based on zip code.
+
+
+### 3.5 Visualiza the spread of the houses by latitude & logitude (in Shinny app)
+
+```{r}
+Bedroom3orLess = df_train[bedrooms <=3,]
+BedroomBetween3and7 = df_train[bedrooms <=7 & bedrooms >=3 ,]
+Bedroom8orGreater = df_train[bedrooms >=8,]
+
+
+```
+
+
+### 3.6 Analysis of the bedrooms in the houses
+
+```{r , fig.height= 12 , fig.width= 16}
+
+# Plot distribution of prices with number of bedrooms
+
+Plot1 = ggplot( df_train , aes(as.factor(bedrooms))) +
+  geom_bar(aes(fill = as.factor(floors))) +
+  theme_classic() +
+  xlab("Number of Bedrooms") +
+  ylab("Frequency of the Flats") +
+  ggtitle("Frequency of Houses Based on Bedrooms")
+
+
+# Create a data table with average price per bedrooms
+
+avgprice_bedroom = data.table(aggregate(df_train[, c("price")], list(df_train$bedrooms), mean))
+
+# Rename the column in the data table
+
+names(avgprice_bedroom) = c("Bedrooms" , "AveragePrice")
+
+# Plot the distribution of avg price based on number of bedrooms
+
+Plot2 = ggplot(avgprice_bedroom , aes(Bedrooms, AveragePrice))+
+           geom_col(fill="green") +
+        ggtitle("Average Price Per Bedrooms") +
+        theme_classic() +
+       xlab("Number of Bedrooms") +
+      ylab("Price") 
+
+
+# Arange both the plot side by side
+
+
+grid.arrange(Plot1,Plot2, nrow = 1)
+
+```
+
+<span style="color:blue"> Most of the houses in the dataset has bedrooms 7 or less. There are few cases where the number of bedrooms exceeded 8. Those may be entry errors or they are exception cases. Also, most of the houses in the database are either 1 or 2 stored.
+
+<span style="color:blue"> From the bar plot we can see that the houses with bedrooms 5 to 6 cost the most. Surprisnlgy, the house with 33 bedrooms cost quite less. This points to the fact that this may be an outlier.
+
+### 3.7 Price of house based on the year built.
+
+```{r , fig.height= 12 , fig.width= 16}
+
+# Roll up the total price based on year built.
+
+MeanPriceOverYears = aggregate(price ~ yr_built, df_train, mean)
+
+# Visualize the line plot
+
+ggplot(data=MeanPriceOverYears, aes(x=yr_built, y=price, group=1)) +
+  geom_line(color="red" , linetype="dashed")+
+  geom_point() +
+  theme_classic() +
+  xlab("Years") +
+  ylab("Mean Price of Houses") +
+  ggtitle("Average Price of Houses Across Different Years") +
+  scale_y_continuous(labels = scales::comma)
+
+```
+
+<span style="color:blue"> We can see that the average prices of hosues took a sharp deep before 1950's and continue to rise after that as the year of built increases. This is quite evident from the fact that new houses will cost more, while some accient houses may be due to heritage also costs more.
+
+
+### 3.7 Price of house by Floors and Waterfront.
+
+```{r, fig.height= 12 , fig.width= 16}
+
+ggplot(df_train, aes(x= floors, y= price
+                         , group =as.factor(waterfront) 
+                         , color =as.factor(waterfront))) +
+  geom_point() +
+  
+  theme_classic() +
+  ggtitle("Price of House Based on Floors")+
+  xlab("Number of Floors") +
+  ylab("Price of Houses") +
+  facet_wrap(~waterfront)+
+  theme(strip.text.x = element_text(size=10, face ="bold"),
+        strip.background = element_rect(colour="black", fill="white"))  +
+  scale_y_continuous(labels = scales::comma) 
+
+
+```
+<span style="color:blue"> The prices seems to be evenly spreadout. However we can make following conclusions: 1) Houses with waterfront generally has some minimum price as the minimum cost is higher than those without. Also flats with 3 floors and with waterfront, minimum cost is significantly higer that 3 floors houses without waterfront
+
+### 3.8  Boxplot of House Condition
+
+```{r , fig.height= 12 , fig.width= 16}
+ggplot(data=df_train[!is.na(df_train$price),], aes(x=factor(condition), y=price))+
+        geom_boxplot(col='blue') + labs(x='Hounse Condition') +
+  theme_classic() +
+  ggtitle("Boxplot of House Prices Based on Condition")
+
+```
+
+<span style="color:blue"> Overall as the condition of house increases the price also increases. But there doesnot seem to a much difference in mean for houses having condition above or equal to 3. There also seems to be quite a lot of outliers in houses with condtions 3 or above.
+
+### 3.9 Overall Plot of All Columns
+
+```{r, fig.height= 12 , fig.width= 16}
+
+s1 = ggplot(data= df_train, aes(x=floors)) +
+  geom_density() + labs(x='Floors') + theme_classic()
+s2 =  ggplot(data=df_train, aes(x=as.factor(waterfront))) +
+  geom_histogram(stat='count') + labs(x='Waterfront')  + theme_classic()
+s3 =  ggplot(data= df_train, aes(x=view)) +
+  geom_histogram() + labs(x='View')  + theme_classic()
+s4 =  ggplot(data= df_train, aes(x=sqft_living)) +
+  geom_density() + labs(x='Square Feet Living')  + theme_classic()
+s5 =  ggplot(data= df_train, aes(x=sqft_basement)) +
+  geom_density() + labs(x='Square feet basement')  + theme_classic()
+s6 =  ggplot(data= df_train, aes(x=yr_renovated)) +
+  geom_density() + labs(x='Year Renovated')  + theme_classic()
+s7 =  ggplot(data= df_train, aes(x=bedrooms)) +
+  geom_density() + labs(x='Bedrooms')  + theme_classic()
+s8 =  ggplot(data= df_train, aes(x=bathrooms)) +
+  geom_histogram() + labs(x='Bathrooms') + theme_classic()
+
+layout =  matrix(c(1,2,3,4,5,6,7,8),4,2,byrow=TRUE)
+multiplot(s1, s2, s3, s4, s5, s6, s7, s8, layout=layout)
+
+```
+
+
+### 3.10 Correlation Matrix
+
+```{r , fig.height= 12 , fig.width= 16}
+
+corrplot.mixed(cor(df_train), tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
+
+```
+ 
+<span style="color:blue"> There seems to be a quite strong relation between grade, bathrooms and sqft_living & sqft_above. Price also seems to be strongly correlated with sqft's grades and bathrooms.
+
+## 4 Baseline Model
+
+<span style="color:blue"> For the base line model we will simple split the the data set into 75% train and rest 25% into test and check the accuracy.
+
+
+### 4.1 Model - Linear Model
+
+```{r}
+
+# Create the function to split the test and train data set.
+
+split = function(df, prop = 0.75){
+
+set.seed(6497)
+df = data.table(df)
+sample = sample.int(n = nrow(df), size = floor(prop*nrow(df)), replace = F)
+
+assign("train", df[sample,] , envir = .GlobalEnv)  
+assign("test" , df[-sample,] ,envir = .GlobalEnv)   
+}
+
+# Use the function to split on test and train data.
+
+split(df_train , 0.90)
+
+# Run the model.
+
+lm_model = lm(price ~.-price - id ,data=train)
+
+#Check overall summary.
+
+summary(lm_model)
+
+# Predict on the test data.
+
+lm_pred = predict(lm_model , test)
+
+# Check the error
+
+lm_rmse = rmse(lm_pred, test$price)
+lm_mape = mape(lm_pred, test$price)
+
+```
+
+### 4.2 Model - XG Boost
+
+```{r}
+
+# Run the model.
+
+xgb_model = xgboost(data = as.matrix(train[,-1]), nfold = 1, label = as.matrix(train$price), 
+                   nrounds = 100, verbose = T, objective = "reg:linear", eval_metric = "rmse", 
+                   nthread = 20, eta = 0.1, gamma =0.5, max_depth = 20, min_child_weight = 5, 
+                   subsample = 0.6213, colsample_bytree = 0.4603, print_every_n = 20)
+
+
+#Check overall summary.
+
+summary(xgb_model)
+
+# Predict on the test data.
+
+xgb_pred = predict(xgb_model , as.matrix(test[,-1]))
+
+# Check the error
+
+xgb_rmse = rmse(xgb_pred, test$price)
+xgb_mape = mape(xgb_pred, test$price)
+
+
+```
+
+### 4.3 Model - Randomforest
+
+```{r}
+
+# Run the model.
+
+rf_model = ranger(price ~ . , data = train)
+
+
+#Check overall summary.
+
+summary(rf_model)
+
+# Predict on the test data.
+
+rf_pred = predict(rf_model , test)$predictions
+
+# Check the error
+
+rf_rmse = rmse(rf_pred, test$price)
+rf_mape = mape(rf_pred, test$price)
+
+
+```
+
+### 4.4 Model - GlMNet
+
+```{r}
+
+# Run the model.
+
+glm_model = glmnet(x = data.matrix(train[, !'price']), 
+                 y = train[['price']],
+                 family = 'gaussian',
+                 alpha=1)
+
+
+#Check overall summary.
+
+summary(glm_model)
+
+# Predict on the test data.
+
+glm_pred = predict(glm_model , as.matrix(test[, !'price']))
+
+# Check the error
+
+glm_rmse = rmse(glm_pred, test$price)
+glm_mape = mape(glm_pred, test$price)
+
+
+```
+
+### 4.5 Compare Baseline Model
+
+```{r}
+
+BaselineMetric= cbind( rbind(LM = lm_rmse,XGB = xgb_rmse,RF = rf_rmse, GLM = glm_rmse), rbind(LM = lm_mape,XGB = xgb_mape,RF = rf_mape, GLM = glm_mape))
+
+colnames(BaselineMetric) = c("RMSE", "MAPE")
+
+BaselineMetric
+
+```
+
+<span style="color:blue"> From the Root mean square value and the mean absolute percentage error it is quite visible that the Random forest & Gradient Boosting is perfoiming better than any other algorithms. As , a result we will use these two algorithms for our final evaluation
+
+
+## 5. Feature Engineering
+
+<span style="color:blue"> Before, we staart with the feature engineering we will combine both the test and the train data set in order to do all the data manipulation and data creation only once.
+
+```{r}
+
+df = rbind(df_train[,!c("price")] , df_test)
+
+```
+
+### 5.1 Total House Area
+
+<span style="color:blue"> Adding the total area of the house.
+
+```{r}
+
+df[,total_area := (sqft_living +  sqft_lot + sqft_above + sqft_basement)]
+
+```
+
+### 5.2 Average Housing Area
+
+<span style="color:blue"> We will now calculate the average total area based on the number of bathrooms and bedrooms
+
+```{r}
+
+df[,avg_area := (total_area / (bedrooms + bathrooms))]
+
+```
+
+### 5.3 Clustering of Latitude , Longitude & Zipcode
+
+```{r}
+
+df1 = df[,c("zipcode" , "lat","long")]
+
+d <- dist(df1, method = "euclidean") # distance matrix
+
+fit <- hclust(d, method="ward") 
+
+plot(fit) # display dendogram
+
+groups <- cutree(fit, k=5) # cut tree into 5 clusters
+
+# draw dendogram with red borders around the 5 clusters 
+
+rect.hclust(fit, k=5, border="red")
+
+# Assign the clusters back to the original data set
+
+df[, cluster_val := groups]
+
+```
+
+### 5.4 Bin Year Built column
+
+<span style="color:blue"> Based on our data exploration which clearly shows the trend of the house price is quite high before 1950 and then somewhere in between, between 1950 - 2000 and quite high after 2000, we will bin the column into these three categories and then one hot encoding
+
+```{r}
+
+# Bin the column year built
+
+df$year_built = ifelse(df$yr_built <=1950, "built_before_1950", ifelse(df$yr_built > 1950 & df$yr_built <2000,"built_before_2000","built_after_2000"))
+
+# Convert the column to a factor
+
+df$year_built =as.factor(df$year_built)
+
+# One hot encode the column
+
+df= one_hot(df, cols = "year_built")
+
+
+
+```
+
+
+### 5.5 Split Test & Train Dataset
+
+
+```{r}
+
+df_final   = cbind.fill(df,df_train$price , fill = NA)
+
+df_final = data.table(df_final)
+colnames(df_final)[colnames(df_final)=="object"] = "price"
+
+# Final train data
+
+df_final_train = df_final[!is.na(df_final$price),]
+
+# Final test data
+
+df_final_test = df_final[is.na(df_final$price),]
+
+
+
+```
+
+
+### 5.6 Create validation dataset
+
+<span style="color:blue"> We will randomly take 5% of the train data set and use it as our valdiation dataset
+
+```{r}
+
+set.seed(6497)
+sample = sample.int(n = nrow(df_train), size = floor(0.95*nrow(df_train)), replace = F)
+
+# Create validation data set
+
+df_validate = df_final_train[-sample]
+
+# Create train data set
+
+df_final_train = df_final_train[sample]
+
+
+
+```
+
+## 6. Modeling
+
+### 6.1 XG Boost
+
+
+```{r, fig.height= 10, fig.width= 16}
+
+input_x <- as.matrix(df_final_train[, !c("price","sqft_lot15", "id", "sqft_living15")])
+input_y = df_final_train$price
+
+
+nrounds = 1000
+
+tune_grid = expand.grid(
+  nrounds = seq(from = 200, to = nrounds, by = 50),
+  eta = c(0.025, 0.05, 0.1),
+  max_depth = c( 3, 4, 5, 6),
+  gamma = 0,
+  colsample_bytree = 1,
+  min_child_weight = c(1,2,3),
+  subsample = 1
+)
+
+
+tune_control <- caret::trainControl(
+  method = "cv", # cross-validation
+  number =3 , 
+  verboseIter = TRUE,
+  allowParallel = TRUE # FALSE for reproducible results 
+)
+
+xgb_tune = caret::train(
+  x = input_x,
+  y = input_y,
+  trControl = tune_control,
+  tuneGrid = tune_grid,
+  method = "xgbTree",
+  verbose = TRUE
+)
+
+tuneplot <- function(x, probs = .90) {
+  ggplot(x) +
+    coord_cartesian(ylim = c(quantile(x$results$RMSE, probs = probs), min(x$results$RMSE))) +
+    theme_bw()
+}
+
+tuneplot(xgb_tune)
+
+
+xgb_tune$bestTune
+
+```
+
+<span style="color:blue"> Thus, the above condition gives the best result for xgb boost.
+
+### 6.2 Random Forest
+
+
+
+```{r}
+
+set.seed(6497)
+
+control = trainControl(method="cv", number=3, search="grid")
+
+tunegrid = expand.grid(.mtry=c(2,4,6,8))
+
+metric = "RMSE"
+
+rf_gridsearch = train(price~bedrooms + bathrooms + view + condition + grade + cluster_val +  lat+ long+ year_built_built_before_2000 + floors + total_area + waterfront + yr_renovated + zipcode+ year_built_built_before_1950, data=df_final_train, method="rf", metric=metric,
+                      tuneGrid=tunegrid, trControl=control, importance=T)
+
+print(rf_gridsearch)
+
+plot(rf_gridsearch)
+
+
+```
+
+
+### 6.3 Variable Importance
+
+<span style="color:blue"> Now lets quickly take a look at the important variables and its effect for the random forest algorithm.
+
+```{r}
+
+plot(varImp(rf_gridsearch), type = "l" , main = "Variable Importance for Random Forest Model (Descending Order) " , xlab = "Percentage" , ylab = "variables" , col = "red" , lwd = 10)
+
+plot(varImp(xgb_tune), type = "l" , main = "Variable Importance for XGB Boost Model (Descending Order) " , xlab = "Percentage" , ylab = "variables" , col = "blue" , lwd = 10)
+
+```
+
+### 6.4 Test on Validation Dataset
+
+```{r}
+
+rf = mape(predict(rf_gridsearch , df_validate), df_validate$price)
+
+xgb = mape(predict(xgb_tune , df_validate), df_validate$price)
+
+
+rbind( rf,xgb)
+
+```
+
+
+## 7. Model Ensembling & Final Prediction
+
+<span style="color:blue"> Finally, we will ensemble the random forest & the XGB Model prediction to create our final model. 
+
+```{r}
+
+ensembeld_model = mape((predict(xgb_tune , df_validate) + predict(rf_gridsearch , df_validate))/2, df_validate$price)
+
+
+ensembeld_model
+
+```
+
+<span style="color:blue"> After ensembling, we are able to reduce the MAPE by more than 1%. So, this will be our final model. 
+
+## 8 Creating Final CSV
+
+```{r}
+
+final_dataset = cbind(df_final_test , Predicted_Price = (predict(xgb_tune , df_final_test) + predict(rf_gridsearch , df_final_test))/2)
+
+
+
+
+```
+
